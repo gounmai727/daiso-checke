@@ -44,6 +44,23 @@ async function fetchAllBranches(keyword, onProgress) {
   });
 }
 
+// 여러 키워드(매장명, 시/군 이름 등)를 한 번에 검색해서 합쳐줍니다.
+// 예: ["이마트의왕점", "범계점"] 또는 ["안양", "의왕", "군포", "과천"]
+async function fetchAllBranchesMulti(keywords, onProgress) {
+  let combined = [];
+  for (const kw of keywords) {
+    const list = await fetchAllBranches(kw.trim(), (n) => onProgress(combined.length + n));
+    combined = combined.concat(list);
+    onProgress(combined.length);
+  }
+  const seen = new Set();
+  return combined.filter((s) => {
+    if (seen.has(s.code)) return false;
+    seen.add(s.code);
+    return true;
+  });
+}
+
 function PasswordGate({ onSuccess }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -203,6 +220,7 @@ export default function Home() {
   const [authed, setAuthed] = useState(null);
   const [keyword, setKeyword] = useState("");
   const [region, setRegion] = useState(REGIONS[0].label);
+  const [customQuery, setCustomQuery] = useState("");
   const [stage, setStage] = useState("idle"); // idle | collecting | discovering | selecting | checking | done
   const [branches, setBranches] = useState([]);
   const [collectedCount, setCollectedCount] = useState(0);
@@ -219,10 +237,26 @@ export default function Home() {
       .catch(() => setAuthed(false));
   }, []);
 
+  // 자주 쓰는 매장/지역 입력값을 브라우저에 기억해둠 (다음에 접속해도 유지)
+  useEffect(() => {
+    const saved = window.localStorage.getItem("daiso_custom_query");
+    if (saved) setCustomQuery(saved);
+  }, []);
+
+  const updateCustomQuery = (v) => {
+    setCustomQuery(v);
+    window.localStorage.setItem("daiso_custom_query", v);
+  };
+
   if (authed === null) return null;
   if (authed === false) return <PasswordGate onSuccess={() => setAuthed(true)} />;
 
   const regionInfo = REGIONS.find((r) => r.label === region);
+  const customKeywords = customQuery
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const usingCustom = customKeywords.length > 0;
 
   const beginSearch = async () => {
     const trimmed = keyword.trim();
@@ -240,7 +274,9 @@ export default function Home() {
 
     let list;
     try {
-      list = await fetchAllBranches(regionInfo.keyword, setCollectedCount);
+      list = usingCustom
+        ? await fetchAllBranchesMulti(customKeywords, setCollectedCount)
+        : await fetchAllBranches(regionInfo.keyword, setCollectedCount);
     } catch (e) {
       alert("매장 목록을 가져오는 중 오류가 발생했습니다.");
       setStage("idle");
@@ -302,6 +338,11 @@ export default function Home() {
           const res = await fetch(`/api/stock?branchCode=${encodeURIComponent(store.code)}&${qs}`);
           const data = await res.json();
           store.stock = data.ok ? data.totalStock || 0 : 0;
+          const firstProduct = data.products && data.products[0];
+          store.location =
+            firstProduct && firstProduct.stairNo != null
+              ? { stairNo: firstProduct.stairNo, zoneNo: firstProduct.zoneNo }
+              : null;
         } catch (e) {
           store.stock = 0;
         }
@@ -369,17 +410,31 @@ export default function Home() {
           />
 
           <label className="fieldLabel">지역</label>
-          <div className="chipRow">
+          <div className={usingCustom ? "chipRow disabled" : "chipRow"}>
             {REGIONS.map((r) => (
               <button
                 key={r.label}
                 className={r.label === region ? "chip active" : "chip"}
                 onClick={() => setRegion(r.label)}
+                disabled={usingCustom}
               >
                 {r.label}
               </button>
             ))}
           </div>
+
+          <label className="fieldLabel">자주 가는 매장 · 지역 직접 입력 (선택)</label>
+          <input
+            className="mainInput"
+            value={customQuery}
+            onChange={(e) => updateCustomQuery(e.target.value)}
+            placeholder="예: 이마트의왕점, 범계점  또는  안양,의왕,군포,과천"
+          />
+          <p className="hint" style={{ marginTop: 6 }}>
+            {usingCustom
+              ? "위 입력값으로 검색해요 (지역 버튼은 무시돼요). 비우면 지역 버튼으로 돌아가요."
+              : "여기에 입력하면 위 지역 버튼 대신 이 매장/지역들만 검색해요. 쉼표(,)로 여러 개 구분 가능."}
+          </p>
 
           <button className="primaryBtn" onClick={beginSearch}>
             검색 시작 →
@@ -390,7 +445,9 @@ export default function Home() {
       {stage === "collecting" && (
         <div className="panel center">
           <div className="spinner" />
-          <p>{region} 지역 매장 목록을 모으고 있어요 ({collectedCount}개 발견)</p>
+          <p>
+            {usingCustom ? customKeywords.join(", ") : `${region} 지역`} 매장 목록을 모으고 있어요 ({collectedCount}개 발견)
+          </p>
         </div>
       )}
 
@@ -546,6 +603,10 @@ export default function Home() {
           flex-wrap: wrap;
           gap: 6px;
         }
+        .chipRow.disabled {
+          opacity: 0.4;
+          pointer-events: none;
+        }
         .chip {
           padding: 6px 12px;
           border-radius: 8px;
@@ -698,6 +759,9 @@ function StoreCard({ store, hasStock }) {
         <div className="name">{store.name}</div>
         <div className="addr">{store.address}</div>
         <div className="hours">🕐 {store.openTime} ~ {store.closeTime}</div>
+        {hasStock && store.location && (
+          <div className="loc">🗺️ {store.location.stairNo}층 {store.location.zoneNo}구역</div>
+        )}
       </div>
       <div className="qty">{hasStock ? `${store.stock}개` : "품절"}</div>
       <style jsx>{`
@@ -726,6 +790,12 @@ function StoreCard({ store, hasStock }) {
           font-size: 11.5px;
           color: #94a3b8;
           margin-top: 2px;
+        }
+        .loc {
+          font-size: 12px;
+          color: #4338ca;
+          font-weight: 600;
+          margin-top: 3px;
         }
         .qty {
           font-weight: 800;
