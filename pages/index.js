@@ -88,7 +88,7 @@ function PasswordGate({ onSuccess }) {
     <div className="gate">
       <div className="gateCard">
         <div className="gateIcon">📦</div>
-        <h2>DAISO 재고 체커</h2>
+        <h2>DAISO 재고 CHECKER</h2>
         <p>비밀번호를 입력해주세요</p>
         <input
           type="password"
@@ -385,16 +385,19 @@ export default function Home() {
   return (
     <div className="app">
       <Head>
-        <title>DAISO 재고 체커</title>
+        <title>DAISO 재고 CHECKER</title>
       </Head>
-      <div className="topbar">
-        <div className="brand">DAISO 재고 체커</div>
-        {stage !== "idle" && (
+      <div className="titleBox">
+        <div className="titleText">DAISO 재고 CHECKER</div>
+        <div className="credit">By ONSELLLOG</div>
+      </div>
+      {stage !== "idle" && (
+        <div className="resetRow">
           <button className="resetLink" onClick={resetSearch}>
             새 검색
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <Stepper step={step} />
 
@@ -545,15 +548,34 @@ export default function Home() {
           padding-bottom: 40px;
           color: #1e293b;
         }
-        .topbar {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 20px 20px 12px;
+        .titleBox {
+          position: relative;
+          margin: 20px 16px 8px;
+          padding: 22px 20px 26px;
+          border: 1.5px solid #e2e8f0;
+          border-radius: 14px;
+          background: white;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
         }
-        .brand {
+        .titleText {
+          text-align: center;
           font-weight: 800;
-          font-size: 17px;
+          font-size: 19px;
+          letter-spacing: 0.02em;
+          color: #1e293b;
+        }
+        .credit {
+          position: absolute;
+          right: 14px;
+          bottom: 8px;
+          font-size: 10px;
+          color: #94a3b8;
+          font-weight: 600;
+        }
+        .resetRow {
+          display: flex;
+          justify-content: flex-end;
+          padding: 0 20px;
         }
         .resetLink {
           border: none;
