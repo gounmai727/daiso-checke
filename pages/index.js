@@ -225,6 +225,7 @@ export default function Home() {
   const [branches, setBranches] = useState([]);
   const [collectedCount, setCollectedCount] = useState(0);
   const [candidates, setCandidates] = useState([]);
+  const [discoverFailed, setDiscoverFailed] = useState(false);
   const [selected, setSelected] = useState(null); // {id, name, price, image} | {id:null, name: keyword} for fallback
   const [stores, setStores] = useState([]);
   const [checkedCount, setCheckedCount] = useState(0);
@@ -266,6 +267,7 @@ export default function Home() {
     }
     cancelRef.current = false;
     setCandidates([]);
+    setDiscoverFailed(false);
     setSelected(null);
     setStores([]);
     setCheckedCount(0);
@@ -304,8 +306,10 @@ export default function Home() {
       );
       const data = await res.json();
       setCandidates(data.products || []);
+      setDiscoverFailed((data.sampleErrors || 0) > 0 && (data.sampleErrors || 0) >= (data.sampleTotal || 1));
     } catch (e) {
       setCandidates([]);
+      setDiscoverFailed(true);
     }
     setStage("selecting");
   };
@@ -470,9 +474,16 @@ export default function Home() {
           <p className="hint">
             "{keyword}"(으)로 여러 상품이 검색될 수 있어요. 정확히 확인할 상품을 골라주세요.
           </p>
-          {candidates.length === 0 ? (
-            <p className="hint">샘플 매장에서 후보를 찾지 못했어요. 그래도 검색어 그대로 전체를 스캔해볼까요?</p>
-          ) : (
+          {candidates.length === 0 && discoverFailed && (
+            <div className="warnBanner">
+              ⚠️ 샘플 매장 확인에 실패했어요 — 다이소 쪽 API가 지금 불안정한 것 같아요.
+              "후보가 없다(진짜 그 상품이 없다)"는 뜻이 아니에요. 잠시 후 새 검색으로 다시 시도해보시는 걸 권해요.
+            </div>
+          )}
+          {candidates.length === 0 && !discoverFailed && (
+            <p className="hint">샘플 매장에는 재고가 없어서 후보를 못 찾았어요. 그래도 검색어 그대로 전체를 스캔해볼까요?</p>
+          )}
+          {candidates.length > 0 && (
             <div className="candList">
               {candidates.map((c) => (
                 <button key={c.id} className="candCard" onClick={() => pickCandidate(c)}>
