@@ -319,6 +319,7 @@ export default function Home() {
       openTime: b.openTime,
       closeTime: b.closeTime,
       stock: null,
+      status: null, // null=대기, in_stock/no_stock/error
     }));
     setStores(initial);
     setStage("checking");
@@ -337,13 +338,15 @@ export default function Home() {
             : `keyword=${encodeURIComponent(product.name)}`;
           const res = await fetch(`/api/stock?branchCode=${encodeURIComponent(store.code)}&${qs}`);
           const data = await res.json();
-          store.stock = data.ok ? data.totalStock || 0 : 0;
+          store.status = data.status || (data.ok ? (data.totalStock > 0 ? "in_stock" : "no_stock") : "error");
+          store.stock = data.totalStock || 0;
           const firstProduct = data.products && data.products[0];
           store.location =
             firstProduct && firstProduct.stairNo != null
               ? { stairNo: firstProduct.stairNo, zoneNo: firstProduct.zoneNo }
               : null;
         } catch (e) {
+          store.status = "error";
           store.stock = 0;
         }
         doneCount++;
@@ -376,9 +379,10 @@ export default function Home() {
     setSelected(null);
   };
 
-  const inStock = stores.filter((s) => s.stock > 0).sort((a, b) => b.stock - a.stock);
-  const noStock = stores.filter((s) => s.stock === 0);
-  const notYet = stores.filter((s) => s.stock === null);
+  const inStock = stores.filter((s) => s.status === "in_stock").sort((a, b) => b.stock - a.stock);
+  const noStock = stores.filter((s) => s.status === "no_stock");
+  const failed = stores.filter((s) => s.status === "error");
+  const notYet = stores.filter((s) => s.status === null);
 
   const step = stage === "idle" ? 1 : stage === "selecting" || stage === "discovering" ? 2 : 3;
 
@@ -516,13 +520,27 @@ export default function Home() {
                 중지하고 지금까지 결과 보기
               </button>
             )}
+            {stage === "done" && failed.length > 0 && failed.length >= stores.length * 0.3 && (
+              <div className="warnBanner">
+                ⚠️ {failed.length}개 매장은 확인에 실패했어요 (다이소 쪽 API가 일시적으로 불안정할 수 있어요).
+                이건 "재고 없음"이 아니라 "확인 못 함"이에요 — 잠시 후 다시 시도해보세요.
+              </div>
+            )}
           </div>
 
           <div className="results">
             {inStock.map((s) => (
-              <StoreCard key={s.code} store={s} hasStock />
+              <StoreCard key={s.code} store={s} status="in_stock" />
             ))}
-            {stage === "done" && noStock.map((s) => <StoreCard key={s.code} store={s} hasStock={false} />)}
+            {stage === "done" && noStock.map((s) => <StoreCard key={s.code} store={s} status="no_stock" />)}
+            {stage === "done" && failed.length > 0 && (
+              <details className="failedSection">
+                <summary>확인 실패한 매장 {failed.length}곳 (재고 정보 아님)</summary>
+                {failed.map((s) => (
+                  <StoreCard key={s.code} store={s} status="error" />
+                ))}
+              </details>
+            )}
             {notYet.length > 0 && stage === "checking" && (
               <p className="pending">나머지 {notYet.length}개 매장 확인 대기 중...</p>
             )}
@@ -763,6 +781,25 @@ export default function Home() {
           font-size: 13px;
           margin-top: 8px;
         }
+        .warnBanner {
+          margin-top: 12px;
+          padding: 10px 12px;
+          background: #fef3c7;
+          color: #92400e;
+          border-radius: 8px;
+          font-size: 12.5px;
+          line-height: 1.5;
+        }
+        .failedSection {
+          margin-top: 10px;
+        }
+        .failedSection summary {
+          cursor: pointer;
+          font-size: 13px;
+          color: #92400e;
+          font-weight: 600;
+          padding: 8px 0;
+        }
         .footer {
           text-align: center;
           font-size: 11px;
@@ -774,18 +811,21 @@ export default function Home() {
   );
 }
 
-function StoreCard({ store, hasStock }) {
+function StoreCard({ store, status }) {
+  const cardClass = status === "in_stock" ? "card ok" : status === "error" ? "card err" : "card no";
+  const qtyText =
+    status === "in_stock" ? `${store.stock}개` : status === "error" ? "확인 실패" : "품절";
   return (
-    <div className={hasStock ? "card ok" : "card no"}>
+    <div className={cardClass}>
       <div className="info">
         <div className="name">{store.name}</div>
         <div className="addr">{store.address}</div>
         <div className="hours">🕐 {store.openTime} ~ {store.closeTime}</div>
-        {hasStock && store.location && (
+        {status === "in_stock" && store.location && (
           <div className="loc">🗺️ {store.location.stairNo}층 {store.location.zoneNo}구역</div>
         )}
       </div>
-      <div className="qty">{hasStock ? `${store.stock}개` : "품절"}</div>
+      <div className="qty">{qtyText}</div>
       <style jsx>{`
         .card {
           display: flex;
@@ -799,6 +839,10 @@ function StoreCard({ store, hasStock }) {
         }
         .card.no {
           opacity: 0.55;
+        }
+        .card.err {
+          opacity: 0.75;
+          border: 1px dashed #f59e0b;
         }
         .name {
           font-weight: 700;
@@ -833,6 +877,11 @@ function StoreCard({ store, hasStock }) {
         .card.no .qty {
           background: #f1f5f9;
           color: #94a3b8;
+          font-size: 12px;
+        }
+        .card.err .qty {
+          background: #fef3c7;
+          color: #b45309;
           font-size: 12px;
         }
       `}</style>
